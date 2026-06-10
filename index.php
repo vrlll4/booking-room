@@ -1,26 +1,27 @@
 <?php
-// الاتصال بقاعدة البيانات
+// الاتصال بقاعدة بيانات الجامعة
 $conn = new mysqli("localhost", "root", "", "tutor_booking");
 if ($conn->connect_error) { die("Connection failed: " . $conn->connect_error); }
 
 $showSuccess = false;
 
-// استقبال بيانات الفورم المحدثة لسيناريو الجامعة
+// استقبال بيانات الحجز بناءً على سيناريو الجامعة الجديد
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $tutor_name = $_POST['student_name']; // حافظنا على اسم المتغير بـ DB منعاً للحوسة
-    $tutor_phone = $_POST['student_phone']; 
-    $room_id = $_POST['tutor_id']; 
+    $tutor_name = $_POST['tutor_name'];
+    $class_name = $_POST['class_name'];
+    $group_size = $_POST['group_size'];
+    $room_id = $_POST['room_id'];
     $booking_date = $_POST['booking_date'];
-    $session_hours = $_POST['session_hours'];
+    $duration_hours = $_POST['duration_hours'];
     
-    // جلب تكلفة تشغيل القاعة لكل ساعة
-    $result = $conn->query("SELECT price_per_hour FROM tutors WHERE tutor_id = $room_id");
+    // حساب التكلفة التقديرية بناءً على نوع القاعة وسعتها
+    $result = $conn->query("SELECT capacity FROM rooms WHERE room_id = $room_id");
     $room = $result->fetch_assoc();
-    $total_price = $session_hours * $room['price_per_hour'];
+    $total_cost = $duration_hours * ($room['capacity'] * 0.5); // معادلة افتراضية للتكلفة
 
-    // إدخال حجز القاعة الأكاديمية في قاعدة البيانات
-    $stmt = $conn->prepare("INSERT INTO appointments (student_name, student_phone, tutor_id, booking_date, session_hours, total_price) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ssisid", $tutor_name, $tutor_phone, $room_id, $booking_date, $session_hours, $total_price);
+    // إدخال الحجز في جدول حجز القاعات الأكاديمية
+    $stmt = $conn->prepare("INSERT INTO classroom_bookings (tutor_name, class_name, group_size, room_id, booking_date, duration_hours, total_cost) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("ssiisid", $tutor_name, $class_name, $group_size, $room_id, $booking_date, $duration_hours, $total_cost);
     
     if ($stmt->execute()) { $showSuccess = true; }
 }
@@ -30,7 +31,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>University Classroom Booking System</title>
+    <title>University Classroom Allocation System</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; margin: 0; padding: 0; }
         .navbar { background-color: #4f46e5; color: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; }
@@ -48,54 +49,57 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <body>
 
     <div class="navbar">
-        <h1>University Portal: Classroom Allocation</h1>
-        <div><strong>Role:</strong> Tutor Panel</div>
+        <h1>University Portal: Classroom Allocation Page</h1>
+        <div><strong>Role:</strong> Academic Tutor</div>
     </div>
 
     <div class="container">
-        <h2>Book a University Classroom</h2>
+        <h2>Classroom Allocation Form</h2>
         
         <form method="POST" action="">
-            <label>Tutor Name (اسم المحاضر):</label>
-            <input type="text" name="student_name" placeholder="Enter your academic name" required>
+            <label>Tutor Name:</label>
+            <input type="text" name="tutor_name" placeholder="Enter your full academic name" required>
 
-            <label>Lesson Type / Course Code (نوع الدرس):</label>
-            <input type="text" name="student_phone" placeholder="e.g. IT-404 Lecture or Lab Session" required>
+            <label>Class Activity / Lesson Type:</label>
+            <input type="text" name="class_name" placeholder="e.g. Java Programming Lab, Math Lecture" required>
 
-            <label>Select Classroom & Type (نوع القاعة):</label>
-            <select name="tutor_id" id="room_select" onchange="calculateTotal()" required>
-                <option value="1" data-price="50">Room 101 - Main Lecture Hall ($50/hr)</option>
-                <option value="2" data-price="80">Room 102 - Advanced Computer Lab ($80/hr)</option>
-                <option value="3" data-price="100">Room 107 - Interactive Seminar Room ($100/hr)</option>
+            <label>Expected Group Size (عدد الطلاب):</label>
+            <input type="number" name="group_size" min="1" placeholder="e.g. 35" required>
+
+            <label>Select Room Allocation & Layout:</label>
+            <select name="room_id" id="room_select" onchange="calculateTotal()" required>
+                <option value="1" data-factor="60">Hall A - Lecture Theatre (Max: 120)</option>
+                <option value="2" data-factor="40">Lab 302 - Computer Room (Max: 30)</option>
+                <option value="3" data-factor="20">Class 105 - Standard Classroom (Max: 40)</option>
             </select>
 
-            <label>Start Date & Time (وقت البدء واليوم):</label>
+            <label>Start Date & Time:</label>
             <input type="date" name="booking_date" required>
 
-            <label>Duration / Period (المدة بالساعات):</label>
-            <input type="number" name="session_hours" id="session_hours" min="1" max="5" value="1" onchange="calculateTotal()" required>
+            <label>Duration (Hours):</label>
+            <input type="number" name="duration_hours" id="duration_hours" min="1" max="6" value="1" onchange="calculateTotal()" required>
 
-            <label>Estimated Overhead Cost ($):</label>
+            <label>Calculated Overhead Cost ($):</label>
             <input type="text" id="total_price" readonly style="background-color: #f3f4f6; font-weight: bold; color: #4f46e5;">
 
-            <button type="submit">Confirm Classroom Booking</button>
+            <button type="submit">Confirm Classroom Reservation</button>
         </form>
 
         <?php if ($showSuccess): ?>
-            <div class="success-box">🎉 Classroom Reserved Successfully for your Lesson!</div>
+            <div class="success-box">🎉 Classroom Allocated Successfully! Timetable generated.</div>
         <?php endif; ?>
     </div>
 
     <footer>
-        &copy; 2026 University Classroom Resource Management.
+        &copy; 2026 University Resource Management System. All Rights Reserved.
     </footer>
 
     <script>
     function calculateTotal() {
         var roomSelect = document.getElementById('room_select');
-        var pricePerHour = parseFloat(roomSelect.options[roomSelect.selectedIndex].getAttribute('data-price'));
-        var hours = parseInt(document.getElementById('session_hours').value) || 1;
-        document.getElementById('total_price').value = "$" + (pricePerHour * hours);
+        var factor = parseFloat(roomSelect.options[roomSelect.selectedIndex].getAttribute('data-factor'));
+        var hours = parseInt(document.getElementById('duration_hours').value) || 1;
+        document.getElementById('total_price').value = "$" + (factor * hours);
     }
     window.onload = calculateTotal;
     </script>
